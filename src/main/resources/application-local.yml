@@ -1,0 +1,40 @@
+spring:
+  ai:
+    dashscope:
+      api-key: your_key
+    minimax:
+      api-key: your_key
+
+# Pexels API 配置
+pexels:
+  api-key: your_key
+
+
+tencent:
+  cos:
+    secret-id: your_id
+    secret-key: your_key
+    region: your_region
+    bucket: your_bucketName
+
+minimax:
+  api-key: your_key
+  base-url: https://api.minimaxi.com/v1/image_generation
+  model: image-01
+  aspect-ratio: "16:9"
+  response-format: base64
+
+
+# SVG 概念示意图生成配置
+svg-diagram:
+  default-width: 800
+  default-height: 600
+  folder: svg-diagrams  # COS 存储文件夹
+
+
+
+stripe:
+  api-key: your_key
+  webhook-secret: your_secret
+  success-url: http://localhost:3000/vip?success=true
+  cancel-url: http://localhost:3000/vip?cancel=true
