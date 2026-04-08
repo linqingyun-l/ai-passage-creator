@@ -5,8 +5,6 @@ import org.example.aipassagecreator.domain.constant.ImageMethodEnum;
 /**
  * 图片检索服务接口
  * 抽象图片检索逻辑，便于扩展多种图片来源（如 Pexels、Unsplash、AI 生图等）
- *
- * @author <a href="https://codefather.cn">编程导航学习圈</a>
  */
 public interface ImageSearchService {
 
