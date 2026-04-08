@@ -7,12 +7,14 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.aipassagecreator.AIAgent.ImageSearchService;
 import org.example.aipassagecreator.AIAgent.Tools.WebCrawlerTool;
+import org.example.aipassagecreator.annotation.AgentExecution;
 import org.example.aipassagecreator.domain.DTO.Article.ArticleState;
 import org.example.aipassagecreator.domain.DTO.image.ImageRequest;
 import org.example.aipassagecreator.domain.constant.ArticleStyleEnum;
 import org.example.aipassagecreator.domain.constant.ImageMethodEnum;
 import org.example.aipassagecreator.domain.constant.PromptConstant;
 import org.example.aipassagecreator.domain.constant.SseMessageTypeEnum;
+import org.example.aipassagecreator.exception.BusinessException;
 import org.example.aipassagecreator.exception.ErrorCode;
 import org.example.aipassagecreator.exception.ThrowUtils;
 import org.example.aipassagecreator.service.CosService;
@@ -25,6 +27,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -43,6 +46,9 @@ public class ArticleAgentService {
 
     @Resource
     private ImageServiceStrategy imageServiceStrategy;
+
+    @Resource
+    private ApplicationContext applicationContext;
 
 
     /**
@@ -155,7 +161,8 @@ public class ArticleAgentService {
     /**
      * 智能体3：生成正文（流式输出）
      */
-    private void agent3GenerateContent(ArticleState state, Consumer<String> streamHandler) {
+    @AgentExecution(value = "Agent3_GenerateContent", description = "智能体3：生成正文")
+    public void agent3GenerateContent(ArticleState state, Consumer<String> streamHandler) {
         String outlineText = GsonUtils.toJson(state.getOutline().getSections());
         String prompt = PromptConstant.AGENT3_CONTENT_PROMPT
                 .replace("{mainTitle}", state.getTitle().getMainTitle())
@@ -171,7 +178,8 @@ public class ArticleAgentService {
     /**
      * 智能体4：分析配图需求
      */
-    private void agent4AnalyzeImageRequirements(ArticleState state) {
+    @AgentExecution(value = "Agent4_AnalyzeImageRequirements", description = "智能体4：分析配图需求")
+    public void agent4AnalyzeImageRequirements(ArticleState state) {
         // 构建可用配图方式说明
         String availableMethods = buildAvailableMethodsDescription(state.getEnabledImageMethods());
 
@@ -192,12 +200,12 @@ public class ArticleAgentService {
         state.setImageRequirements(agent4Result.getImageRequirements());
         log.info("智能体4：配图需求分析成功, count={}, 已在正文中插入占位符",
                 agent4Result.getImageRequirements().size());
-        log.info("智能体4：配图需求分析成功,result={}", agent4Result);
     }
     /**
      * 智能体5：生成配图（串行执行，支持混用多种配图方式，统一上传到 COS）
      */
-    private void agent5GenerateImages(ArticleState state, Consumer<String> streamHandler) {
+    @AgentExecution(value = "Agent5_GenerateImages", description = "智能体5：生成配图")
+    public void agent5GenerateImages(ArticleState state, Consumer<String> streamHandler) {
         List<ArticleState.ImageResult> imageResults = new ArrayList<>();
 
         for (ArticleState.ImageRequirement requirement : state.getImageRequirements()) {
@@ -238,7 +246,7 @@ public class ArticleAgentService {
     /**
      * 图文合成：将配图插入正文对应位置
      */
-    private void mergeImagesIntoContent(ArticleState state) {
+    public void mergeImagesIntoContent(ArticleState state) {
         String content = state.getContent();
         List<ArticleState.ImageResult> images = state.getImages();
 
@@ -414,6 +422,7 @@ public class ArticleAgentService {
         };
     }
 
+    @AgentExecution(value = "AI_ModifyOutline", description = "AI修改大纲")
     public List<ArticleState.OutlineSection> aiModifyOutline(String mainTitle, String subTitle,
                                                              List<ArticleState.OutlineSection> currentOutline,
                                                              String modifySuggestion) {
@@ -426,22 +435,21 @@ public class ArticleAgentService {
         return outlineResult.getSections();
     }
     /**
-     * 阶段1：生成标题方案（3-5个）
-     *
-     * @param state         文章状态
-     * @param streamHandler 流式输出处理器
+     * 执行阶段1：生成标题
      */
+    @AgentExecution(value = "Phase1_GenerateTitles", description = "执行阶段1：生成标题方案")
     public void executePhase1_GenerateTitles(ArticleState state, Consumer<String> streamHandler) {
         try {
             // 智能体1：生成标题方案
             log.info("阶段1：开始生成标题方案, taskId={}", state.getTaskId());
-            agent1GenerateTitleOptions(state);
+            // 通过代理调用，使 AOP 生效
+            getProxy().agent1GenerateTitleOptions(state);
             streamHandler.accept(SseMessageTypeEnum.AGENT1_COMPLETE.getValue());
             log.info("阶段1：标题方案生成完成, taskId={}, optionsCount={}",
                     state.getTaskId(), state.getTitleOptions().size());
         } catch (Exception e) {
-            log.error("阶段1：标题方案生成失败, taskId={}", state.getTaskId(), e);
-            throw new RuntimeException("标题方案生成失败: " + e.getMessage(), e);
+            log.error("阶段1执行失败, taskId={}", state.getTaskId(), e);
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "标题生成失败: " + e.getMessage());
         }
     }
 
@@ -451,6 +459,7 @@ public class ArticleAgentService {
      * @param state         文章状态
      * @param streamHandler 流式输出处理器
      */
+    @AgentExecution(value = "Phase2_GenerateOutline", description = "执行阶段2：生成大纲")
     public void executePhase2_GenerateOutline(ArticleState state, Consumer<String> streamHandler) {
         try {
             // 智能体2：生成大纲（流式输出）
@@ -470,6 +479,7 @@ public class ArticleAgentService {
      * @param state         文章状态
      * @param streamHandler 流式输出处理器
      */
+    @AgentExecution(value = "Phase3_GenerateContent", description = "执行阶段3：生成正文+配图")
     public void executePhase3_GenerateContent(ArticleState state, Consumer<String> streamHandler) {
         try {
             // 智能体3：生成正文（流式输出）
@@ -501,7 +511,8 @@ public class ArticleAgentService {
     /**
      * 智能体1：生成标题方案（3-5个）
      */
-    private void agent1GenerateTitleOptions(ArticleState state) {
+    @AgentExecution(value = "Agent1_GenerateTitleOptions", description = "智能体1：生成标题方案")
+    public void agent1GenerateTitleOptions(ArticleState state) {
         String prompt = PromptConstant.AGENT1_TITLE_PROMPT
                 .replace("{topic}", state.getTopic())
                 + getStylePrompt(state.getStyle());
@@ -516,4 +527,11 @@ public class ArticleAgentService {
         log.info("智能体1：标题方案生成成功, optionsCount={}", titleOptions.size());
     }
 
+    /**
+     * 获取当前类的代理对象
+     * 用于解决 Spring AOP 同类方法调用代理失效问题
+     */
+    private ArticleAgentService getProxy() {
+        return applicationContext.getBean(ArticleAgentService.class);
+    }
 }

@@ -5,6 +5,8 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.aipassagecreator.AIAgent.AIService.ArticleAgentService;
 import org.example.aipassagecreator.AIAgent.Manager.SseEmitterManager;
+import org.example.aipassagecreator.AIAgent.parallel.ArticleAgentOrchestrator;
+import org.example.aipassagecreator.config.AgentConfig;
 import org.example.aipassagecreator.domain.DTO.Article.ArticleState;
 import org.example.aipassagecreator.domain.PO.Article;
 import org.example.aipassagecreator.domain.PO.User;
@@ -33,6 +35,11 @@ public class ArticleAsyncService {
 
     @Resource
     private ArticleService articleService;
+    @Resource
+    private ArticleAgentOrchestrator articleAgentOrchestrator;
+
+    @Resource
+    private AgentConfig agentConfig;
 
     /**
      * 异步执行文章生成
@@ -143,10 +150,16 @@ public class ArticleAsyncService {
             state.setTopic(topic);
             state.setStyle(style);
 
-            // 执行阶段1：生成标题方案
-            articleAgentService.executePhase1_GenerateTitles(state, message -> {
-                handleAgentMessage(taskId, message, state);
-            });
+            // 执行阶段1：生成标题方案（根据配置选择执行方式）
+            if (agentConfig.isOrchestratorEnabled()) {
+                articleAgentOrchestrator.executePhase1_GenerateTitles(state, message -> {
+                    handleAgentMessage(taskId, message, state);
+                });
+            } else {
+                articleAgentService.executePhase1_GenerateTitles(state, message -> {
+                    handleAgentMessage(taskId, message, state);
+                });
+            }
 
             // 保存标题方案到数据库
             articleService.saveTitleOptions(taskId, state.getTitleOptions());
@@ -200,10 +213,16 @@ public class ArticleAsyncService {
             title.setSubTitle(article.getSubTitle());
             state.setTitle(title);
 
-            // 执行阶段2：生成大纲
-            articleAgentService.executePhase2_GenerateOutline(state, message -> {
-                handleAgentMessage(taskId, message, state);
-            });
+            // 执行阶段2：生成大纲（根据配置选择执行方式）
+            if (agentConfig.isOrchestratorEnabled()) {
+                articleAgentOrchestrator.executePhase2_GenerateOutline(state, message -> {
+                    handleAgentMessage(taskId, message, state);
+                });
+            } else {
+                articleAgentService.executePhase2_GenerateOutline(state, message -> {
+                    handleAgentMessage(taskId, message, state);
+                });
+            }
 
             // 保存大纲到数据库
             Article articleToUpdate = articleService.getByTaskId(taskId);
@@ -274,11 +293,17 @@ public class ArticleAsyncService {
             outlineResult.setSections(outlineSections);
             state.setOutline(outlineResult);
 
-            // 执行阶段3：生成正文+配图
-            articleAgentService.executePhase3_GenerateContent(state, message -> {
-                handleAgentMessage(taskId, message, state);
-            });
-
+            // 执行阶段3：生成正文+配图（根据配置选择执行方式）
+            // 多智能体编排模式支持配图并行生成
+            if (agentConfig.isOrchestratorEnabled()) {
+                articleAgentOrchestrator.executePhase3_GenerateContent(state, message -> {
+                    handleAgentMessage(taskId, message, state);
+                });
+            } else {
+                articleAgentService.executePhase3_GenerateContent(state, message -> {
+                    handleAgentMessage(taskId, message, state);
+                });
+            }
             // 保存完整文章到数据库
             articleService.saveArticleContent(taskId, state);
 

@@ -35,16 +35,22 @@ public class AuthInterceptor {
         if (mustRoleEnum == null) {
             return joinPoint.proceed();
         }
-        // 必须有这个权限才能通过
+        // 获取用户角色枚举
         UserRoleEnum userRoleEnum = UserRoleEnum.getEnumByValue(loginUser.getUserRole());
-        if (userRoleEnum == null) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
-        }
         // 要求必须有管理员权限，但当前用户没有
-        if (UserRoleEnum.ADMIN.equals(mustRoleEnum) && !UserRoleEnum.ADMIN.equals(userRoleEnum)) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
+        if (UserRoleEnum.ADMIN.equals(mustRoleEnum)) {
+            if (userRoleEnum == null || !UserRoleEnum.ADMIN.equals(userRoleEnum)) {
+                throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
+            }
+            return joinPoint.proceed();
         }
-        // 通过权限校验，放行
-        return joinPoint.proceed();
+        // 要求普通用户权限（user角色），用户已登录且有有效角色字符串即可通过
+        // 只要用户有有效角色字符串（非null/空，即USER/ADMIN/VIP等）即可访问
+        String userRole = loginUser.getUserRole();
+        if (userRole != null && !userRole.isEmpty()) {
+            return joinPoint.proceed();
+        }
+        // 用户角色为空或无效
+        throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
     }
 }

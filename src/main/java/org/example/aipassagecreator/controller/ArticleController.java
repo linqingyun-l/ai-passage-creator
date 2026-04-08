@@ -12,11 +12,13 @@ import org.example.aipassagecreator.common.BaseResponse;
 import org.example.aipassagecreator.common.DeleteRequest;
 import org.example.aipassagecreator.common.ResultUtils;
 import org.example.aipassagecreator.domain.DTO.Article.*;
+import org.example.aipassagecreator.domain.VO.AgentExecutionStats;
 import org.example.aipassagecreator.domain.VO.ArticleVO;
 import org.example.aipassagecreator.domain.VO.LoginUserVO;
 import org.example.aipassagecreator.domain.constant.ArticleStyleEnum;
 import org.example.aipassagecreator.exception.ErrorCode;
 import org.example.aipassagecreator.exception.ThrowUtils;
+import org.example.aipassagecreator.service.AgentLogService;
 import org.example.aipassagecreator.service.ArticleAsyncService;
 import org.example.aipassagecreator.service.ArticleService;
 import org.example.aipassagecreator.service.UserService;
@@ -43,6 +45,9 @@ public class ArticleController {
     @Resource
     private UserService userService;
 
+    @Resource
+    private AgentLogService agentLogService;
+
     /**
      * 创建文章任务
      *
@@ -61,8 +66,13 @@ public class ArticleController {
 
         LoginUserVO loginUser = userService.getLoginUser(httpServletRequest);
 
-        // 创建文章任务
-        String taskId = articleService.createArticleTask(request.getTopic(), loginUser, request.getStyle());
+        // 检查并消耗配额 + 创建文章任务（在同一事务中）
+        String taskId = articleService.createArticleTaskWithQuotaCheck(
+                request.getTopic(),
+                request.getStyle(),
+                request.getEnabledImageMethods(),
+                loginUser
+        );
 
         // 异步执行阶段1：生成标题方案
         articleAsyncService.executePhase1(
@@ -224,5 +234,17 @@ public class ArticleController {
         );
 
         return ResultUtils.success(modifiedOutline);
+    }
+    /**
+     * 获取任务执行日志
+     */
+    @GetMapping("/execution-logs/{taskId}")
+    @Operation(summary = "获取任务执行日志")
+    public BaseResponse<AgentExecutionStats> getExecutionLogs(@PathVariable String taskId) {
+        ThrowUtils.throwIf(taskId == null || taskId.trim().isEmpty(),
+                ErrorCode.PARAMS_ERROR, "任务ID不能为空");
+
+        AgentExecutionStats stats = agentLogService.getExecutionStats(taskId);
+        return ResultUtils.success(stats);
     }
 }
